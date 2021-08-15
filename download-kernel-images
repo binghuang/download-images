@@ -197,7 +197,7 @@ function donwload_5_4_18_debs()
 				fi
 				download_dirs[$dir_ind]=$dest
 
-				#donwload_one_5_4_18_deb $file $dest
+				donwload_one_5_4_18_deb $file $dest
 			done
 		done
 
