@@ -99,9 +99,100 @@ function build_5_4_18_file()
 	echo $file
 }
 
+function download_one_4_4_131_old_tarball()
+{
+		curl 2>/dev/null ${src_4_4_131_old}$1/$2 -o /tmp/$2
+
+		dir=`echo $2 | cut -d"-" -f2-4`
+		dir+="-arm64"
+		if ! [ -d /tmp/$dir ]; then
+			mkdir /tmp/$dir
+		fi
+
+		tar xf /tmp/$2 -C /tmp/$dir
+
+		cd 1>/dev/null /tmp/$dir
+		files=(`ls | grep -v -e "kylin-headers" -e "kylin-image"`)
+		for file in ${files[@]};do
+			rm -rf $file
+		done
+		cd 1>/dev/null -
+	
+		cd 1>/dev/null /tmp
+		tar cf $dir.tar $dir
+		rm -rf $dir
+		cd 1>/dev/null -
+
+		rm -rf /tmp/$2
+
+		mv /tmp/$dir.tar ./
+}
+
+function download_one_4_4_131_old_dir()
+{
+	files=(`curl 2>/dev/null ${src_4_4_131_old}$1/ | gawk -e '{print $NF}'`)
+	
+	for file in ${files[@]}; do
+		echo $file | grep -q "desktop"
+		if [ $? -eq 0 ]; then
+			download_one_4_4_131_old_tarball $1 $file
+		fi
+	done	
+}
+
+function build_4_4_131_old_dirs()
+{
+		deb_dirs=()
+		d=0
+		date_dir_patten="2020""-"$1"-"$2
+		for dir in ${debs_4_4_131_old[@]}; do
+			echo $dir | grep -q $date_dir_patten
+			if [ $? -eq 0 ]; then
+				deb_dirs[$d]=$dir
+				d=$[$d + 1]
+			fi
+		done
+
+		echo ${deb_dirs[$d - 1]}
+}
+
 function download_4_4_131_old_debs()
 {
-	true
+	smonth=`expr ${4:4:2}`
+	sday=`expr ${4:6:2}`
+
+	emonth=`expr ${5:4:2}`
+	eday=`expr ${5:6:2}`
+
+	if [ $4 == $5 ]; then
+		dir=`build_4_4_131_old_dirs $smonth $sday`
+
+		#for dir in ${deb_dirs[@]}; do
+		#	#download_one_4_4_131_old_dir $dir 
+		#	true
+		#done
+		download_one_4_4_131_old_dir $dir 
+
+		return
+	fi
+
+	if (( $smonth == $emonth )); then
+		return
+	fi
+
+	for (( month=$smonth; $month <= $emonth; month=$[$month + 1] )); do
+			case `expr $month / 1` in
+				2)
+					;;
+				4 | 6 | 9 | 11)
+					;;
+				*)
+					;;
+			esac
+		for (( day=$sday; $day <= $eday; day=$[$day + 1] )); do
+			true
+		done
+	done
 }
 
 function download_4_4_131_new_debs()
@@ -237,11 +328,9 @@ function check_date()
 	echo $1 | grep -q -E "[0-9]{8}"
 
 	if [ $? -eq 0 ]; then
-		ver_date=$1
-
-		year=`expr ${ver_date:0:4}`
-		month=`expr ${ver_date:4:2}`
-		day=`expr ${ver_date:6:2}`
+		year=`expr ${1:0:4}`
+		month=`expr ${1:4:2}`
+		day=`expr ${1:6:2}`
 
 		if [ $year -lt 2020 ]; then
 			usage
