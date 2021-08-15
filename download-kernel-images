@@ -1,0 +1,384 @@
+#!/bin/bash
+###############################################################################
+# 由于经常要回退版本以便缩小问题范围，这就经常要去编译内核。这非常耗时费力。
+# 当然，这样的机械性重复的工作有时不得不做。幸运的是，我们的内核基本上在每周
+# 都会发布一个版本,并且在launchpad上可以下载。但由于随着时间的推移，
+# 在launchpad上的包也越来越多，这个给我们下载带来了困扰和麻烦。
+# 因此，这个脚本就用于自动下载launchpad上的内核包。
+#
+# 作者：黄兵(桌面内核优化组,huangbing@kylinos.cn)
+###############################################################################
+
+src_4_4_131_new="http://ppa.launchpad.dev/liuyun01/kernel-v10/kylinos-desktop/pool/main/k/kylin/"
+debs_4_4_131_new=(`curl $src_4_4_131_new  2>/dev/null | grep href | cut -d"=" -f 5 | cut -d'"' -f 2 | grep -v ".udeb" | grep deb | grep -e "kylin-image" -e  "kylin-headers"`)
+if [ ${#debs_4_4_131_new[@]} -eq 0 ];then
+	exit 1
+fi
+
+src_4_4_131_old="ftp://172.20.185.198/robot/"
+debs_4_4_131_old=(`curl $src_4_4_131_old 2>/dev/null | gawk '{print $NF}' | grep 2020`)
+if [ ${#debs_4_4_131_old[@]} -eq 0 ];then
+	exit 1
+fi
+
+src_5_4_18="http://ppa.launchpad.dev/liuyun01/kernel-v10.1/kylin/pool/main/l/linux/"
+debs_5_4_18=(`curl $src_5_4_18 2>/dev/null| grep  href | cut -d" " -f 8 | cut -d '"' -f 2 | grep -v ".udeb" | grep deb | grep -e "linux-image" -e "linux-modules" -e "linux-extra" -e "linux-headers"`)
+if [ ${#debs_5_4_18[@]} -eq 0 ];then
+	exit 1
+fi
+
+download_dirs=()
+
+function usage()
+{
+	echo "USAGE:"
+	echo -e "\t$(basename $0) version architecture type beginpoint [endpoint]"
+	echo -e "\tversion: 4.4.131/5.4.18"
+	echo -e "\tarchitecture: arm64/amd64/mips64el/loongarch64/sw64"
+	echo -e "\ttype: generic/biv/lowlatency/3a4000"
+	echo -e "\tnote: biv and lowlatency only for 5.4.18;3a4000 only for 4.4.131"
+	echo -e "\tbeginpoint: date format for 4.4.131; number from 14 for 5.4.18"
+	echo -e "\tendpoint: date format for 4.4.131; number from 14 for 5.4.18"
+
+	exit 0
+}
+
+function tarball_5_4_18_debs()
+{
+	for dir in ${download_dirs[@]}; do
+		cd /tmp
+		tar cf $dir.tar $dir
+		cd - > /dev/null
+		mv /tmp/$dir.tar ./
+		rm -rf /tmp/$dir
+	done
+}
+
+function file_5_4_18_exist()
+{
+	debs=()
+
+	i=0
+	#for deb in ${debs_5_4_18[@]}; do
+	for d in ${!debs_5_4_18[@]}; do
+		echo "${debs_5_4_18[$d]}" | grep -q "$1"
+		if [ $? -eq 0 ];then
+			debs[$i]=${debs_5_4_18[$d]}
+			i=$[$i + 1]
+		fi
+	done
+
+	echo ${debs[@]}
+}
+
+function build_5_4_18_file()
+{
+	version=$1
+	arch=$2
+	classification=$3
+	extra=$4
+
+	suffix+="_$version-$extra.*_$arch.deb"
+	case $5 in
+		"image" | "headers" | "modules" | "modules-extra")
+			file="linux-$5-$version-$extra-${classification}"
+			;;
+		"all")
+			file="linux-headers-$version-$extra"
+			suffix="_$version-$extra.*_$5.deb"
+			;;
+		*)
+			file=""
+			;;
+	esac
+
+	if [ -n $file ]; then
+			file+=$suffix
+	fi
+
+	echo $file
+}
+
+function download_4_4_131_old_debs()
+{
+	true
+}
+
+function download_4_4_131_new_debs()
+{
+	true
+}
+
+function download_4_4_131_debs()
+{
+	sdate=$4
+	edate=$5
+
+	syear=`expr ${sdate:0:4}`
+	eyear=`expr ${edate:0:4}`
+
+	if (( $syear == $eyear )); then
+		if (( $syear == 2020 )); then
+			download_4_4_131_old_debs $1 $2 $3 $sdate $edate
+		else
+			download_4_4_131_new_debs $1 $2 $3 $sdate $edate
+		fi
+
+		return
+	fi
+
+	for (( year=$syear; $year <= $eyear; year=$[$year + 1] ))
+	do
+		if (( $year == 2020 )); then
+			sdate=$4
+			edate="20201231"	
+			download_4_4_131_old_debs $1 $2 $3 $sdate $edate
+		else
+			if (( $year == $syear )); then
+				sdate=$4
+				edate="$year""1231"
+			elif (( $syear < $year && $year <$eyear )); then
+				sdate="$year""0101"
+				edate="$year""1231"
+			else
+				sdate="$year""0101"
+				if [ $# -eq 5 ];then
+					edate=$5
+				fi
+			fi
+
+			download_4_4_131_new_debs $1 $2 $3 $sdate $edate
+		fi
+		echo $sdate
+		echo $edate
+	done
+}
+
+function donwload_one_5_4_18_deb()
+{
+	curl ${src_5_4_18}$1 -o /tmp/$2/$1 2>/dev/null
+}
+
+function donwload_5_4_18_debs()
+{
+	prefixes=("image" "headers" "all" "modules" "modules-extra")
+	sweek=$4
+	eweek=$4
+	if [ $# -eq 5 ];then
+		eweek=$5
+	fi
+
+	isweek=`expr sweek`
+	ieweek=`expr eweek`
+
+	for (( week=$isweek; $week <= $ieweek; week=$[$week + 1] )); do
+		download_dirs=()
+		for prefix in ${prefixes[@]}; do
+			file_patten=`build_5_4_18_file $1 $2 $3 $week $prefix`
+
+			debs=`file_5_4_18_exist $file_patten`
+			if [ ${#debs[@]} -eq 0 ];then
+				continue
+			fi
+
+			dir_ind=0
+			for file in ${debs[@]}; do
+				id=`echo "${file%.deb}" | cut -d"_" -f2`
+				id=`echo $id | gawk -F. '{print $NF}'`
+				dest=$1-$week.$id-$3-$2
+				if ! [ -d /tmp/$dest ];then
+					mkdir /tmp/$dest 
+				fi
+				for (( d=0; $d < ${#download_dirs[@]}; d=$[$d + 1] ))
+				do
+					if [ "${download_dirs[$d]}" == "$dest" ];then
+						dir_ind=$d
+						break
+					fi	
+				done
+				if [ $d -eq ${#download_dirs[@]} ];then
+					dir_ind=${#download_dirs[@]}
+				fi
+				download_dirs[$dir_ind]=$dest
+
+				#donwload_one_5_4_18_deb $file $dest
+			done
+		done
+
+		tarball_5_4_18_debs
+	done
+}
+
+function download_debs()
+{
+	case $1 in
+		"4.4.131")
+			case $# in
+				4)
+					download_4_4_131_debs $1 $2 $3 $4 $4
+					;;
+				5)
+					download_4_4_131_debs $1 $2 $3 $4 $5
+					;;
+			esac
+			;;		
+
+		"5.4.18")
+			case $# in
+				4)
+					donwload_5_4_18_debs $1 $2 $3 $4
+					;;
+				5)
+					donwload_5_4_18_debs $1 $2 $3 $4 $5
+					;;
+			esac
+			;;
+	esac
+}
+
+function check_date()
+{
+	echo $1 | grep -q -E "[0-9]{8}"
+
+	if [ $? -eq 0 ]; then
+		ver_date=$1
+
+		year=`expr ${ver_date:0:4}`
+		month=`expr ${ver_date:4:2}`
+		day=`expr ${ver_date:6:2}`
+
+		if [ $year -lt 2020 ]; then
+			usage
+		fi
+
+		if [ $month -lt 1 ] || [ $month -gt 12 ]; then
+			usage
+		fi
+
+		if [ $day -lt 1 ] || [ $day -gt 31 ]; then
+			usage
+		fi
+
+		epoch=`expr $year % 100`
+		if ! [ `expr $epoch % 4` -eq 0 ] && ! [ `expr $year % 4` -eq 0 ];then
+			if [ $month -eq 2 ] && [ $day -gt 28 ]; then
+				usage	
+			fi	
+		fi
+
+		case `expr $month / 1` in
+			4 | 6 | 9 | 11)
+				if [ $day -eq 31 ];then
+					usage
+				fi
+				;;
+		esac
+
+	else
+		usage
+	fi
+}
+
+function check_dates()
+{
+	check_date $1
+	if [ $# -eq 2 ]; then
+		check_date $2
+	
+		if [ `expr $1` -gt ` expr $2` ]; then
+			usage
+		fi
+	fi
+}
+
+function check_week()
+{
+	echo $1 | grep -q -E "[0-9]{1,2}" 
+	if [ $? -eq 0 ];then
+		week=`expr $1`
+		if [ $week -lt 1 ] || [ $week -gt 52 ]; then
+			usage
+		fi
+	else
+		usage
+	fi
+}
+
+function check_weeks()
+{
+	check_week $1
+	if [ $# -eq 2 ]; then
+		check_week $2
+
+		if [ `expr $1` -gt `expr $2` ]; then
+			usage
+		fi
+	fi
+}
+
+function check_args()
+{
+	case $1 in
+		"4.4.131" | "5.4.18")
+			version=$1
+			;;
+		*)
+			usage
+			;;
+	esac
+
+	case $2 in
+		"arm64" | "amd64" | "mips64el" | "loongarch64" | "sw64")
+			arch=$2
+			if [ $version == "4.4.131" ];then
+				if [ $arch == "loongarch64" ] || [ $arch == "sw64" ];then
+					usage
+				fi
+			fi	
+			;;
+		*)
+			usage
+			;;	
+	esac
+
+	case $3 in
+		"generic" | "biv" | "lowlatency" | "3a4000")
+			classification=$3
+			if [ $version == "5.4.18" ] && [ $classification == "3a4000" ];then
+				usage
+			elif [ $version == "4.4.131" ]; then
+				if [ $classification == "biv" ] || [ $classification == "biv" ] 
+				then
+					usage
+				fi
+			fi	
+			;;
+		*)
+			usage
+			;;
+	esac
+
+	if [ $version == "4.4.131" ]; then
+		check_dates $4		
+	else
+		check_weeks $4
+	fi
+
+	if [ $# -eq 5 ]; then
+		if [ $version == "4.4.131" ]; then
+			check_dates $4 $5		
+		else
+			check_weeks $4 $5
+		fi
+	fi
+}
+
+if [ $# -lt 4 ] || [ $# -gt 5 ]; then
+	usage
+elif [ $# -eq 4 ]; then
+	check_args $1 $2 $3 $4
+	download_debs $1 $2 $3 $4
+elif [ $# -eq 5 ]; then
+	check_args $1 $2 $3 $4 $5
+	download_debs $1 $2 $3 $4 $5
+fi
