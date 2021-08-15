@@ -142,15 +142,11 @@ function download_4_4_131_debs()
 				edate="$year""1231"
 			else
 				sdate="$year""0101"
-				if [ $# -eq 5 ];then
-					edate=$5
-				fi
+				edate=$5
 			fi
 
 			download_4_4_131_new_debs $1 $2 $3 $sdate $edate
 		fi
-		echo $sdate
-		echo $edate
 	done
 }
 
