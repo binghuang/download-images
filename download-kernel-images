@@ -150,12 +150,12 @@ function download_4_4_131_debs()
 	done
 }
 
-function donwload_one_5_4_18_deb()
+function download_one_5_4_18_deb()
 {
 	curl ${src_5_4_18}$1 -o /tmp/$2/$1 2>/dev/null
 }
 
-function donwload_5_4_18_debs()
+function download_5_4_18_debs()
 {
 	prefixes=("image" "headers" "all" "modules" "modules-extra")
 	sweek=$4
@@ -197,7 +197,7 @@ function donwload_5_4_18_debs()
 				fi
 				download_dirs[$dir_ind]=$dest
 
-				donwload_one_5_4_18_deb $file $dest
+				download_one_5_4_18_deb $file $dest
 			done
 		done
 
@@ -222,10 +222,10 @@ function download_debs()
 		"5.4.18")
 			case $# in
 				4)
-					donwload_5_4_18_debs $1 $2 $3 $4
+					download_5_4_18_debs $1 $2 $3 $4
 					;;
 				5)
-					donwload_5_4_18_debs $1 $2 $3 $4 $5
+					download_5_4_18_debs $1 $2 $3 $4 $5
 					;;
 			esac
 			;;
