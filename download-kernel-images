@@ -39,6 +39,8 @@ function usage()
 	echo -e "\tnote: biv and lowlatency only for 5.4.18;3a4000 only for 4.4.131"
 	echo -e "\tbeginpoint: date format for 4.4.131; number from 14 for 5.4.18"
 	echo -e "\tendpoint: date format for 4.4.131; number from 14 for 5.4.18"
+	echo -e "Sample:\n\t./download-kernel-images 5.4.18 arm64 generic 16 30" \
+			"\n\t./download-kernel-images 4.4.131 arm64 generic 20210107  20210107"
 
 	exit 0
 }
@@ -97,6 +99,51 @@ function build_5_4_18_file()
 	fi
 
 	echo $file
+}
+
+function build_4_4_131_file()
+{
+	version=$1
+	arch=$2
+	classification=$3
+	datetime=$4
+
+	suffix+="_$version-$datetime.*_$arch.deb"
+	case $5 in
+		"image" | "headers" | "image-extra")
+			file="kylin-$5-$version-$datetime-${classification}"
+			;;
+		"all")
+			file="kylin-headers-$version-$datetime"
+			suffix="_$version-$datetime.*_$5.deb"
+			;;
+		*)
+			file=""
+			;;
+	esac
+
+	if [ -n $file ]; then
+			file+=$suffix
+	fi
+
+	echo $file
+}
+
+function file_4_4_131_exist()
+{
+	debs=()
+
+	i=0
+	#for deb in ${debs_5_4_18[@]}; do
+	for d in ${!debs_4_4_131_new[@]}; do
+		echo "${debs_4_4_131_new[$d]}" | grep -q "$1"
+		if [ $? -eq 0 ];then
+			debs[$i]=${debs_4_4_131_new[$d]}
+			i=$[$i + 1]
+		fi
+	done
+
+	echo ${debs[@]}
 }
 
 function download_one_4_4_131_old_tarball()
@@ -243,9 +290,133 @@ function download_4_4_131_old_debs()
 	done
 }
 
+function download_4_4_131_one_day_new()
+{
+	prefixes=("image" "headers" "all" "image-extra")
+
+	download_dirs=()
+	for prefix in ${prefixes[@]}; do
+			file_patten=`build_4_4_131_file $1 $2 $3 $4 $prefix`
+
+			debs=`file_4_4_131_exist $file_patten`
+			if [ ${#debs[@]} -eq 0 ];then
+				continue
+			fi
+
+			dir_ind=0
+			for file in ${debs[@]}; do
+				id=`echo "${file%.deb}" | cut -d"_" -f2`
+				id=`echo $id | gawk -F. '{print $NF}'`
+				dest=$1-$4-$3-$2-$id
+				if ! [ -d /tmp/$dest ];then
+					mkdir /tmp/$dest 
+				fi
+				for (( d=0; $d < ${#download_dirs[@]}; d=$[$d + 1] ))
+				do
+					if [ "${download_dirs[$d]}" == "$dest" ];then
+						dir_ind=$d
+						break
+					fi	
+				done
+				if [ $d -eq ${#download_dirs[@]} ];then
+					dir_ind=${#download_dirs[@]}
+				fi
+				download_dirs[$dir_ind]=$dest
+
+				download_one_4_4_131_deb_new $file $dest
+			done
+		done
+
+		tarball_5_4_18_debs
+}
+
+function download_4_4_131_one_month_new()
+{
+	sday=`expr $6 / 1`
+	eday=`expr $7 / 1`
+
+	for (( day=$sday; $day <= $eday; day=$[$day + 1] )); do
+		if [ $day -lt 10 ]; then
+			datetime=$4$50$day
+		else
+			datetime=$4$5$day
+		fi	
+		download_4_4_131_one_day_new $1 $2 $3 $datetime
+	done
+}
+
 function download_4_4_131_new_debs()
 {
-	true
+	syear=`expr ${sdate:0:4}`
+	smonth=`expr ${4:4:2}`
+	emonth=`expr ${5:4:2}`
+	sday=`expr ${4:6:2}`
+	eday=`expr ${5:6:2}`
+
+	if [ $4 == $5 ]; then
+		download_4_4_131_one_day_new $1 $2 $3 $4
+		return
+	fi
+
+	if (( `expr $smonth / 1` == `expr $emonth / 1` )); then
+		download_4_4_131_one_month_new $1 $2 $3 $syear $smonth $sday $eday 
+		return
+	fi
+
+	leap_year=0
+	epoch=`expr $syear % 100`
+	if [ `expr $epoch % 4` -eq 0 ] || [ `expr $syear % 4` -eq 0 ];then
+		echo "------------------"
+		leap_year=1
+	fi
+
+	for (( month=`expr $smonth / 1`; $month <= `expr $emonth / 1`; month=$[$month + 1] )); do
+		if [ $month -eq `expr $smonth / 1` ]; then
+			sday=`expr ${4:6:2}`
+			case `expr $month / 1` in
+				2)
+					if [ $leap_year -eq 1 ]; then
+						eday="29"
+					else
+						eday="28"
+					fi
+					;;
+				4 | 6 | 9 | 11)
+					eday="30"
+					;;
+				*)
+					eday="31"
+					;;
+			esac
+		elif [ $month -eq `expr $emonth / 1` ]; then
+			sday="01"
+			eday=`expr ${5:6:2}`
+		else
+			sday="01"
+			case `expr $month / 1` in
+				2)
+					if [ $leap_year -eq 1 ]; then
+						eday="29"
+					else
+						eday="28"
+					fi
+					;;
+				4 | 6 | 9 | 11)
+					eday="30"
+					;;
+				*)
+					eday="31"
+					;;
+			esac
+		fi
+
+		
+		if [ $month -lt 10 ]; then
+			month="0"$month
+		fi
+
+		download_4_4_131_one_month_new $1 $2 $3 $syear $month $sday $eday
+	done
 }
 
 function download_4_4_131_debs()
@@ -292,6 +463,11 @@ function download_4_4_131_debs()
 function download_one_5_4_18_deb()
 {
 	curl ${src_5_4_18}$1 -o /tmp/$2/$1 2>/dev/null
+}
+
+function download_one_4_4_131_deb_new()
+{
+	curl ${src_4_4_131_new}$1 -o /tmp/$2/$1 2>/dev/null
 }
 
 function download_5_4_18_debs()
