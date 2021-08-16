@@ -131,7 +131,6 @@ function download_one_4_4_131_old_tarball()
 function download_one_4_4_131_old_dir()
 {
 	files=(`curl 2>/dev/null ${src_4_4_131_old}$1/ | gawk -e '{print $NF}'`)
-	
 	for file in ${files[@]}; do
 		echo $file | grep -q "desktop"
 		if [ $? -eq 0 ]; then
@@ -142,18 +141,48 @@ function download_one_4_4_131_old_dir()
 
 function build_4_4_131_old_dirs()
 {
-		deb_dirs=()
+		old_deb_dirs=()
 		d=0
 		date_dir_patten="2020""-"$1"-"$2
 		for dir in ${debs_4_4_131_old[@]}; do
 			echo $dir | grep -q $date_dir_patten
 			if [ $? -eq 0 ]; then
-				deb_dirs[$d]=$dir
+				old_deb_dirs[$d]=$dir
 				d=$[$d + 1]
 			fi
 		done
+		
+		#if [ ${#old_deb_dirs[@]} -ge 1 ]; then
+		#	echo ${old_deb_dirs[$d - 1]}
+		#fi
+		echo ${old_deb_dirs[@]}
+}
 
-		echo ${deb_dirs[$d - 1]}
+function download_4_4_131_one_day()
+{
+		old_dir=()
+		old_dir=`build_4_4_131_old_dirs $1 $2`
+
+		for dir in ${old_dir[@]}; do
+			download_one_4_4_131_old_dir $dir 
+		done
+		#if ! [ -z $old_dir ]; then
+		#	download_one_4_4_131_old_dir $old_dir 
+		#fi
+}
+
+function download_4_4_131_one_month()
+{
+		sday=$2
+		eday=$3
+
+		for (( day=$sday; $day <= $eday; day=$[$day + 1] )); do
+			if [ $day -lt 10 ]; then
+				download_4_4_131_one_day $1 0$day
+			else
+				download_4_4_131_one_day $1 $day
+			fi
+		done
 }
 
 function download_4_4_131_old_debs()
@@ -165,33 +194,52 @@ function download_4_4_131_old_debs()
 	eday=`expr ${5:6:2}`
 
 	if [ $4 == $5 ]; then
-		dir=`build_4_4_131_old_dirs $smonth $sday`
-
-		#for dir in ${deb_dirs[@]}; do
-		#	#download_one_4_4_131_old_dir $dir 
-		#	true
-		#done
-		download_one_4_4_131_old_dir $dir 
-
+		download_4_4_131_one_day $smonth $sday
 		return
 	fi
 
-	if (( $smonth == $emonth )); then
+	if (( `expr $smonth / 1` == `expr $emonth / 1` )); then
+		download_4_4_131_one_month $smonth $sday $eday
 		return
 	fi
 
-	for (( month=$smonth; $month <= $emonth; month=$[$month + 1] )); do
+	for (( month=`expr $smonth / 1`; $month <= `expr $emonth / 1`; month=$[$month + 1] )); do
+		if [ $month -eq `expr $smonth / 1` ]; then
+			sday=`expr ${4:6:2}`
 			case `expr $month / 1` in
 				2)
+					eday="29"
 					;;
 				4 | 6 | 9 | 11)
+					eday="30"
 					;;
 				*)
+					eday="31"
 					;;
 			esac
-		for (( day=$sday; $day <= $eday; day=$[$day + 1] )); do
-			true
-		done
+		elif [ $month -eq `expr $emonth / 1` ]; then
+			sday="01"
+			eday=`expr ${5:6:2}`
+		else
+			sday="01"
+			case `expr $month / 1` in
+				2)
+					eday="29"
+					;;
+				4 | 6 | 9 | 11)
+					eday="30"
+					;;
+				*)
+					eday="31"
+					;;
+			esac
+		fi
+		
+		if [ $month -lt 10 ]; then
+			download_4_4_131_one_month 0$month $sday $eday
+		else
+			download_4_4_131_one_month $month $sday $eday
+		fi
 	done
 }
 
@@ -218,7 +266,7 @@ function download_4_4_131_debs()
 		return
 	fi
 
-	for (( year=$syear; $year <= $eyear; year=$[$year + 1] ))
+	for (( year=`expr $syear / 1`; $year <= `expr $eyear / 1`; year=$[$year + 1] ))
 	do
 		if (( $year == 2020 )); then
 			sdate=$4
